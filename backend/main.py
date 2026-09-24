@@ -31,21 +31,42 @@ dotenv_path = Path(__file__).resolve().parent / ".env"
 
 def get_cors_origins() -> List[str]:
     load_dotenv(dotenv_path=dotenv_path, override=True)
-    raw = os.getenv("CORS_ORIGINS", "")
-    if raw.strip():
-        return [o.strip() for o in raw.split(",") if o.strip()]
-    return [
+    origins = [
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
+    # Merge custom CORS_ORIGINS from environment variable (comma-separated)
+    raw_cors = os.getenv("CORS_ORIGINS", "")
+    if raw_cors.strip():
+        for o in raw_cors.split(","):
+            val = o.strip()
+            if val and val not in origins:
+                origins.append(val)
 
-# Allow frontend to communicate with backend
+    # Merge FRONTEND_URL environment variable (e.g. from Vercel deployment)
+    frontend_url = os.getenv("FRONTEND_URL", "").strip()
+    if frontend_url and frontend_url not in origins:
+        origins.append(frontend_url)
+
+    # Merge VERCEL_URL environment variable (auto-provided by Vercel)
+    vercel_url = os.getenv("VERCEL_URL", "").strip()
+    if vercel_url:
+        if not vercel_url.startswith("http"):
+            vercel_url = f"https://{vercel_url}"
+        if vercel_url not in origins:
+            origins.append(vercel_url)
+
+    return origins
+
+
+# Allow frontend to communicate with backend (including all Vercel production and preview domains)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),
+    allow_origin_regex=r"https:\/\/.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -2848,3 +2869,9 @@ def get_career_preparation(authorization: Optional[str] = Header(None)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to compute career preparation: {str(e)}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
